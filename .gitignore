@@ -1,69 +1,37 @@
-*.rbc
-capybara-*.html
-.rspec
-/db/*.sqlite3
-/db/*.sqlite3-journal
-/db/*.sqlite3-[0-9]*
-/public/system
-/coverage/
-/spec/tmp
-*.orig
-rerun.txt
-pickle-email-*.html
+# The directory Mix will write compiled artifacts to.
+/_build/
 
-# Ignore all logfiles and tempfiles.
-/log/*
-/tmp/*
-!/log/.keep
-!/tmp/.keep
+# If you run "mix test --cover", coverage assets end up here.
+/cover/
 
-# TODO Comment out this rule if you are OK with secrets being uploaded to the repo
-config/initializers/secret_token.rb
-config/master.key
+# The directory Mix downloads your dependencies sources to.
+/deps/
 
-# Only include if you have production secrets in this file, which is no longer a Rails default
-# config/secrets.yml
+# Where 3rd-party dependencies like ExDoc output generated docs.
+/doc/
 
-# dotenv, dotenv-rails
-# TODO Comment out these rules if environment variables can be committed
-.env
-.env*.local
+# Ignore .fetch files in case you like to edit your project deps locally.
+/.fetch
 
-## Environment normalization:
-/.bundle
-/vendor/bundle
+# If the VM crashes, it generates a dump, let's ignore it too.
+erl_crash.dump
 
-# these should all be checked in to normalize the environment:
-# Gemfile.lock, .ruby-version, .ruby-gemset
+# Also ignore archive artifacts (built via "mix archive.build").
+*.ez
 
-# unless supporting rvm < 1.11.0 or doing something fancy, ignore this:
-.rvmrc
+# Temporary files, for example, from tests.
+/tmp/
 
-# if using bower-rails ignore default bower_components path bower.json files
-/vendor/assets/bower_components
-*.bowerrc
-bower.json
+# Ignore package tarball (built via "mix hex.build").
+footdrafts-*.tar
 
-# Ignore pow environment settings
-.powenv
+# Ignore assets that are produced by build tools.
+/priv/static/assets/
 
-# Ignore Byebug command history file.
-.byebug_history
+# Ignore digested assets cache.
+/priv/static/cache_manifest.json
 
-# Ignore node_modules
-node_modules/
+# In case you use Node.js/npm, you want to ignore these.
+npm-debug.log
+/assets/node_modules/
 
-# Ignore precompiled javascript packs
-/public/packs
-/public/packs-test
-/public/assets
-
-# Ignore yarn files
-/yarn-error.log
-yarn-debug.log*
-.yarn-integrity
-
-# Ignore uploaded files in development
-/storage/*
-!/storage/.keep
-/public/uploads
