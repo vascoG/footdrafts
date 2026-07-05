@@ -2,6 +2,7 @@ defmodule FootDrafts.Football.Import do
   @moduledoc false
 
   alias FootDrafts.Football
+  alias FootDrafts.Football.ImportPayloads.Epl
 
   @type competition_attrs :: %{
           required(:name) => String.t(),
@@ -23,6 +24,8 @@ defmodule FootDrafts.Football.Import do
           optional(:nationality) => String.t() | nil,
           optional(:birth_date) => Date.t() | nil,
           optional(:birth_city) => String.t() | nil,
+          optional(:rating) => number() | Decimal.t() | nil,
+          optional(:rating_season) => String.t() | nil,
           required(:external_id) => String.t()
         }
 
@@ -55,9 +58,14 @@ defmodule FootDrafts.Football.Import do
 
             imported_players =
               Enum.map(club_payload.players, fn player_payload ->
-                player_payload
-                |> Map.put(:club_id, club.id)
-                |> Football.upsert_player!()
+                player =
+                  player_payload
+                  |> Map.drop([:rating, :rating_season])
+                  |> Map.put(:club_id, club.id)
+                  |> Football.upsert_player!()
+
+                maybe_upsert_player_rating(player, player_payload)
+                player
               end)
 
             {clubs + 1, players + length(imported_players)}
@@ -77,6 +85,31 @@ defmodule FootDrafts.Football.Import do
   defp fetch_competition_payload!(competition_code) do
     normalized_code = String.upcase(String.trim(competition_code))
 
+    case normalized_code do
+      "EPL" -> Epl.payload()
+      _ -> default_stub_payload(normalized_code)
+    end
+  end
+
+  defp maybe_upsert_player_rating(player, player_payload) do
+    case Map.get(player_payload, :rating) do
+      nil ->
+        :ok
+
+      rating ->
+        season = Map.get(player_payload, :rating_season, Integer.to_string(Date.utc_today().year))
+
+        Football.upsert_player_rating!(%{
+          player_id: player.id,
+          season: season,
+          rating: rating
+        })
+
+        :ok
+    end
+  end
+
+  defp default_stub_payload(normalized_code) do
     # TODO: Replace this stubbed payload with a Req call to football-data.org and
     # map the API response into the competition/clubs/players shape defined here.
     %{

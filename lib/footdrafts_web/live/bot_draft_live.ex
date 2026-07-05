@@ -370,8 +370,19 @@ defmodule FootDraftsWeb.BotDraftLive do
       [] -> fake_players()
       players -> players
     end
-    |> Enum.take(20)
+    |> balanced_players_by_club(2)
     |> Map.new(fn player -> {player.id, player} end)
+  end
+
+  defp balanced_players_by_club(players, players_per_club) do
+    players
+    |> Enum.group_by(& &1.club_id)
+    |> Enum.filter(fn {_club_id, club_players} -> length(club_players) >= players_per_club end)
+    |> Enum.flat_map(fn {_club_id, club_players} ->
+      club_players
+      |> Enum.sort_by(& &1.name)
+      |> Enum.take(players_per_club)
+    end)
   end
 
   defp normalize_db_players(players) do
@@ -420,6 +431,16 @@ defmodule FootDraftsWeb.BotDraftLive do
         rating: 88.0
       },
       %{
+        id: 117,
+        name: "Ivan Kolar",
+        position: "Defender",
+        club_id: 201,
+        club_name: "Valencia Blue",
+        nationality: "Croatia",
+        competition_id: 1,
+        rating: 82.0
+      },
+      %{
         id: 102,
         name: "Joao Mota",
         position: "Left Back",
@@ -428,6 +449,16 @@ defmodule FootDraftsWeb.BotDraftLive do
         nationality: "Portugal",
         competition_id: 1,
         rating: 79.0
+      },
+      %{
+        id: 110,
+        name: "Rafael Duarte",
+        position: "Left Wing",
+        club_id: 202,
+        club_name: "Lisbon Harbor",
+        nationality: "Portugal",
+        competition_id: 1,
+        rating: 86.0
       },
       %{
         id: 103,
@@ -450,20 +481,10 @@ defmodule FootDraftsWeb.BotDraftLive do
         rating: 83.0
       },
       %{
-        id: 105,
-        name: "Pietro Nardi",
-        position: "Right Back",
-        club_id: 205,
-        club_name: "Torino Nord",
-        nationality: "Italy",
-        competition_id: 1,
-        rating: 81.0
-      },
-      %{
         id: 106,
         name: "Noah Berg",
         position: "Defensive Midfielder",
-        club_id: 206,
+        club_id: 204,
         club_name: "Stockholm IF",
         nationality: "Sweden",
         competition_id: 1,
@@ -473,47 +494,17 @@ defmodule FootDraftsWeb.BotDraftLive do
         id: 107,
         name: "Ibrahim Yildiz",
         position: "Central Midfielder",
-        club_id: 207,
-        club_name: "Ankara Sun",
+        club_id: 204,
+        club_name: "Stockholm IF",
         nationality: "Turkey",
         competition_id: 1,
         rating: 90.0
       },
       %{
-        id: 108,
-        name: "Niko Petrov",
-        position: "Central Midfielder",
-        club_id: 208,
-        club_name: "Belgrade United",
-        nationality: "Serbia",
-        competition_id: 1,
-        rating: 84.0
-      },
-      %{
-        id: 109,
-        name: "Leo Martin",
-        position: "Attacking Midfielder",
-        club_id: 209,
-        club_name: "Lyon Horizons",
-        nationality: "France",
-        competition_id: 1,
-        rating: 91.0
-      },
-      %{
-        id: 110,
-        name: "Rafael Duarte",
-        position: "Left Wing",
-        club_id: 210,
-        club_name: "Porto Waves",
-        nationality: "Portugal",
-        competition_id: 1,
-        rating: 86.0
-      },
-      %{
         id: 111,
         name: "Jonas Silva",
         position: "Right Wing",
-        club_id: 211,
+        club_id: 205,
         club_name: "Santos Vista",
         nationality: "Brazil",
         competition_id: 1,
@@ -523,51 +514,11 @@ defmodule FootDraftsWeb.BotDraftLive do
         id: 112,
         name: "Tariq Mansour",
         position: "Striker",
-        club_id: 212,
+        club_id: 205,
         club_name: "Casablanca Stars",
         nationality: "Morocco",
         competition_id: 1,
         rating: 89.0
-      },
-      %{
-        id: 113,
-        name: "Ethan Cole",
-        position: "Striker",
-        club_id: 213,
-        club_name: "Bristol Albion",
-        nationality: "England",
-        competition_id: 1,
-        rating: 80.0
-      },
-      %{
-        id: 114,
-        name: "Mika Ojala",
-        position: "Right Wing",
-        club_id: 214,
-        club_name: "Helsinki Forge",
-        nationality: "Finland",
-        competition_id: 1,
-        rating: 78.0
-      },
-      %{
-        id: 115,
-        name: "Dusan Markic",
-        position: "Left Wing",
-        club_id: 210,
-        club_name: "Porto Waves",
-        nationality: "Czechia",
-        competition_id: 1,
-        rating: 82.0
-      },
-      %{
-        id: 116,
-        name: "Bruno Costa",
-        position: "Attacking Midfielder",
-        club_id: 216,
-        club_name: "Madeira City",
-        nationality: "Portugal",
-        competition_id: 1,
-        rating: 77.0
       }
     ]
   end
