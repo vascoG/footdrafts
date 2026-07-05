@@ -50,7 +50,7 @@ defmodule FootDrafts.Football do
 
   @spec upsert_club!(map()) :: Club.t()
   def upsert_club!(attrs) do
-    %Club{}
+    %Club{competition_id: Map.get(attrs, :competition_id)}
     |> Club.changeset(attrs)
     |> Repo.insert!(
       conflict_target: :external_id,
