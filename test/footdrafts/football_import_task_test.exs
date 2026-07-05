@@ -10,9 +10,9 @@ defmodule FootDrafts.FootballImportTaskTest do
     first_run_output = capture_io(fn -> Mix.Tasks.FootballData.Import.run(["pl"]) end)
 
     assert first_run_output =~ "Imported PL Competition (PL): 2 clubs, 3 players"
-    assert Repo.aggregate(Competition, :count) == 1
-    assert Repo.aggregate(Club, :count) == 2
-    assert Repo.aggregate(Player, :count) == 3
+    assert Repo.aggregate(Competition, :count, :id) == 1
+    assert Repo.aggregate(Club, :count, :id) == 2
+    assert Repo.aggregate(Player, :count, :id) == 3
 
     second_run_output = capture_io(fn -> Mix.Tasks.FootballData.Import.run(["PL"]) end)
 
