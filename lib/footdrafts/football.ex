@@ -61,8 +61,8 @@ defmodule FootDrafts.Football do
 
   @spec upsert_player!(map()) :: Player.t()
   def upsert_player!(attrs) do
-    %Player{}
-    |> Player.changeset(attrs)
+    %Player{club_id: Map.fetch!(attrs, :club_id)}
+    |> Player.changeset(Map.delete(attrs, :club_id))
     |> Repo.insert!(
       conflict_target: :external_id,
       on_conflict:

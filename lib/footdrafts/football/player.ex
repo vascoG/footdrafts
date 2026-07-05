@@ -32,10 +32,9 @@ defmodule FootDrafts.Football.Player do
       :nationality,
       :birth_date,
       :birth_city,
-      :external_id,
-      :club_id
+      :external_id
     ])
-    |> validate_required([:name, :external_id, :club_id])
+    |> validate_required([:name, :external_id])
     |> foreign_key_constraint(:club_id)
     |> unique_constraint(:external_id)
   end

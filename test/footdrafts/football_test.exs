@@ -64,9 +64,7 @@ defmodule FootDrafts.FootballTest do
   end
 
   defp player_fixture(club, attrs) do
-    attrs = Map.put(attrs, :club_id, club.id)
-
-    %Player{}
+    %Player{club_id: club.id}
     |> Player.changeset(attrs)
     |> Repo.insert!()
   end
