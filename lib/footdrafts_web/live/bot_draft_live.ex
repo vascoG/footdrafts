@@ -1,49 +1,117 @@
 defmodule FootDraftsWeb.BotDraftLive do
   use FootDraftsWeb, :live_view
 
-  alias FootDrafts.Football
+  alias FootDrafts.{BotStrategy, Draft.State, Football}
+  alias FootDrafts.GameModes.Normal
 
   @squad_size 5
+  @participants [:human, :bot]
+  @bot_delay_min_ms 1_000
+  @bot_delay_max_ms 3_000
+
+  @type difficulty :: :easy | :medium | :hard
 
   @impl true
-  def mount(_params, _session, socket) do
-    pool = load_player_pool()
+  def mount(params, _session, socket) do
+    difficulty = parse_difficulty(Map.get(params, "difficulty"))
+    delay_override_ms = parse_delay_override(Map.get(params, "bot_delay_ms"))
+    state = new_draft_state()
 
     {:ok,
      socket
      |> assign(:page_title, "Bot Draft")
      |> assign(:squad_size, @squad_size)
-     |> assign(:pool, pool)
-     |> assign(:human_squad, [])
-     |> assign(:bot_squad, [])
-     |> assign(:draft_complete?, false)
+     |> assign(:difficulty, difficulty)
+     |> assign(:delay_override_ms, delay_override_ms)
+     |> assign(:state, state)
+     |> assign(:bot_thinking?, false)
+     |> assign(:outcome, nil)
      |> assign(:status_message, "Your turn. Pick your first player.")}
   end
 
   @impl true
   def handle_event("pick", %{"id" => id}, socket) do
-    if socket.assigns.draft_complete? do
+    cond do
+      socket.assigns.bot_thinking? ->
+        {:noreply, socket}
+
+      socket.assigns.state.status == :complete ->
+        {:noreply, socket}
+
+      true ->
+        player_id = String.to_integer(id)
+
+        case apply_legal_pick(socket.assigns.state, :human, player_id) do
+          {:ok, state_after_human} ->
+            if state_after_human.status == :complete do
+              {:noreply,
+               socket
+               |> assign(:state, state_after_human)
+               |> finalize_outcome(state_after_human)}
+            else
+              delay_ms = bot_delay_ms(socket)
+              Process.send_after(self(), :bot_turn, delay_ms)
+
+              {:noreply,
+               socket
+               |> assign(:state, state_after_human)
+               |> assign(:bot_thinking?, true)
+               |> assign(:status_message, "Bot is thinking...")}
+            end
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, pick_error_message(reason))}
+        end
+    end
+  end
+
+  def handle_event("set_difficulty", %{"level" => difficulty}, socket) do
+    parsed_difficulty = parse_difficulty(difficulty)
+    state = new_draft_state()
+
+    {:noreply,
+     socket
+     |> assign(:difficulty, parsed_difficulty)
+     |> assign(:state, state)
+     |> assign(:bot_thinking?, false)
+     |> assign(:outcome, nil)
+     |> assign(:status_message, "Your turn. Pick your first player.")}
+  end
+
+  @impl true
+  def handle_info(:bot_turn, socket) do
+    if socket.assigns.state.status == :complete or not socket.assigns.bot_thinking? do
       {:noreply, socket}
     else
-      player_id = String.to_integer(id)
+      legal_ids = legal_player_ids(socket.assigns.state, :bot)
 
-      case take_player(socket.assigns.pool, player_id) do
-        {:ok, picked_player, pool_after_human} ->
-          human_squad = socket.assigns.human_squad ++ [picked_player]
-
-          {bot_squad, final_pool, status_message, draft_complete?} =
-            run_bot_turn(human_squad, socket.assigns.bot_squad, pool_after_human)
-
+      case BotStrategy.pick_player_id(
+             legal_ids,
+             socket.assigns.state.players,
+             socket.assigns.difficulty
+           ) do
+        nil ->
           {:noreply,
            socket
-           |> assign(:pool, final_pool)
-           |> assign(:human_squad, human_squad)
-           |> assign(:bot_squad, bot_squad)
-           |> assign(:status_message, status_message)
-           |> assign(:draft_complete?, draft_complete?)}
+           |> assign(:bot_thinking?, false)
+           |> assign(:status_message, "Bot has no legal picks left. Start a new draft.")}
 
-        :error ->
-          {:noreply, put_flash(socket, :error, "That player is no longer available.")}
+        player_id ->
+          {:ok, state_after_bot} = apply_legal_pick(socket.assigns.state, :bot, player_id)
+
+          if state_after_bot.status == :complete do
+            {:noreply,
+             socket
+             |> assign(:state, state_after_bot)
+             |> assign(:bot_thinking?, false)
+             |> finalize_outcome(state_after_bot)}
+          else
+            {:noreply,
+             socket
+             |> assign(:state, state_after_bot)
+             |> assign(:bot_thinking?, false)
+             |> assign(:status_message, "Your turn. Pick the next player.")}
+          end
       end
     end
   end
@@ -59,8 +127,37 @@ defmodule FootDraftsWeb.BotDraftLive do
           <h1 class="mt-2 font-[Trebuchet_MS] text-3xl font-bold text-[#18251c]">Play Against Bot</h1>
 
           <p class="mt-2 text-sm leading-relaxed text-[#294132]/80">
-            Draft five players. The bot always picks the highest-value remaining player.
+            Draft five players. Bot picks are legal, delayed, and driven by hidden rating difficulty.
           </p>
+
+          <div class="mt-4 flex flex-wrap gap-2" id="difficulty-picker">
+            <button
+              id="difficulty-easy"
+              phx-click="set_difficulty"
+              phx-value-level="easy"
+              class={difficulty_button_classes(@difficulty, :easy)}
+            >
+              Easy
+            </button>
+
+            <button
+              id="difficulty-medium"
+              phx-click="set_difficulty"
+              phx-value-level="medium"
+              class={difficulty_button_classes(@difficulty, :medium)}
+            >
+              Medium
+            </button>
+
+            <button
+              id="difficulty-hard"
+              phx-click="set_difficulty"
+              phx-value-level="hard"
+              class={difficulty_button_classes(@difficulty, :hard)}
+            >
+              Hard
+            </button>
+          </div>
         </header>
 
         <div class="grid gap-4 rounded-2xl border border-[#1f2f26]/10 bg-white p-4 shadow-sm sm:grid-cols-3">
@@ -68,21 +165,25 @@ defmodule FootDraftsWeb.BotDraftLive do
             <h2 class="text-xs font-semibold uppercase tracking-[0.16em] text-[#294132]/80">You</h2>
 
             <p class="mt-2 text-2xl font-bold text-[#122117]">
-              {length(@human_squad)} / {@squad_size}
+              {squad_size(@state, :human)} / {@squad_size}
             </p>
 
             <ul class="mt-3 space-y-1 text-sm text-[#243c2d]" id="human-squad-list">
-              <li :for={player <- @human_squad}>{player.name} · {player.position}</li>
+              <li :for={player <- squad_players(@state, :human)}>
+                {player.name} - {player.position}
+              </li>
             </ul>
           </article>
 
           <article class="rounded-xl bg-[#fff4e5] p-4" id="bot-panel">
             <h2 class="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a4710]/80">Bot</h2>
 
-            <p class="mt-2 text-2xl font-bold text-[#54300e]">{length(@bot_squad)} / {@squad_size}</p>
+            <p class="mt-2 text-2xl font-bold text-[#54300e]">
+              {squad_size(@state, :bot)} / {@squad_size}
+            </p>
 
             <ul class="mt-3 space-y-1 text-sm text-[#704318]" id="bot-squad-list">
-              <li :for={player <- @bot_squad}>{player.name} · {player.position}</li>
+              <li :for={player <- squad_players(@state, :bot)}>{player.name} - {player.position}</li>
             </ul>
           </article>
 
@@ -93,9 +194,27 @@ defmodule FootDraftsWeb.BotDraftLive do
 
             <p class="mt-2 text-sm text-[#243c2d]">{@status_message}</p>
 
-            <p class="mt-2 text-sm text-[#243c2d]">Players available: {length(@pool)}</p>
+            <p class="mt-2 text-sm text-[#243c2d]">Players available: {MapSet.size(@state.pool)}</p>
+
+            <p class="mt-2 text-xs uppercase tracking-[0.14em] text-[#294132]/70">
+              Difficulty: {String.upcase(to_string(@difficulty))}
+            </p>
           </article>
         </div>
+
+        <section
+          :if={@outcome}
+          class="rounded-2xl border border-[#1f2f26]/20 bg-[#f5fbef] p-4 text-sm text-[#122117]"
+          id="outcome-panel"
+        >
+          <h2 class="font-semibold">Draft Outcome</h2>
+
+          <p class="mt-2">Winner: {winner_label(@outcome.winner)}</p>
+
+          <p class="mt-1">Your score: {score_for(@outcome.scores, :human)}</p>
+
+          <p class="mt-1">Bot score: {score_for(@outcome.scores, :bot)}</p>
+        </section>
 
         <section class="rounded-3xl border border-[#1f2f26]/10 bg-white p-4 shadow-sm">
           <div class="mb-3 flex items-center justify-between">
@@ -106,14 +225,14 @@ defmodule FootDraftsWeb.BotDraftLive do
 
           <ul class="grid gap-3" id="available-player-list">
             <li
-              :for={player <- @pool}
+              :for={player <- pool_players(@state)}
               class="flex flex-col gap-3 rounded-2xl border border-[#1f2f26]/10 bg-[#fdfefb] p-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
                 <p class="font-semibold text-[#122117]">{player.name}</p>
 
                 <p class="text-sm text-[#294132]/80">
-                  {player.position} · {player.club_name} · {player.nationality}
+                  {player.position} - {player.club_name} - {player.nationality}
                 </p>
               </div>
 
@@ -122,7 +241,9 @@ defmodule FootDraftsWeb.BotDraftLive do
                 data-player-id={player.id}
                 phx-click="pick"
                 phx-value-id={player.id}
-                disabled={@draft_complete?}
+                disabled={
+                  @bot_thinking? or @state.status == :complete or State.current_turn(@state) != :human
+                }
                 class="inline-flex items-center justify-center rounded-xl bg-[#1f2f26] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#132019] disabled:cursor-not-allowed disabled:bg-[#6e7d73]"
               >
                 Pick
@@ -135,214 +256,318 @@ defmodule FootDraftsWeb.BotDraftLive do
     """
   end
 
-  defp run_bot_turn(human_squad, bot_squad, pool) do
-    cond do
-      complete?(human_squad, bot_squad) ->
-        {bot_squad, pool, winner_message(human_squad, bot_squad), true}
+  defp difficulty_button_classes(active_difficulty, button_difficulty) do
+    base =
+      "rounded-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] transition border"
 
-      length(bot_squad) >= @squad_size ->
-        {bot_squad, pool, "Bot squad complete. Finish your picks.", false}
-
-      true ->
-        bot_pick = Enum.max_by(pool, & &1.bot_value)
-        {:ok, picked_player, pool_after_bot} = take_player(pool, bot_pick.id)
-        new_bot_squad = bot_squad ++ [picked_player]
-
-        if complete?(human_squad, new_bot_squad) do
-          {new_bot_squad, pool_after_bot, winner_message(human_squad, new_bot_squad), true}
-        else
-          {new_bot_squad, pool_after_bot, "Your turn. Pick the next player.", false}
-        end
+    if active_difficulty == button_difficulty do
+      base <> " border-[#1b2b22] bg-[#1f2f26] text-white"
+    else
+      base <> " border-[#1b2b22]/25 bg-white text-[#1b2b22] hover:border-[#1b2b22]/40"
     end
   end
 
-  defp complete?(human_squad, bot_squad) do
-    length(human_squad) >= @squad_size and length(bot_squad) >= @squad_size
+  defp new_draft_state do
+    players = load_player_pool()
+    State.new(Normal, :worldwide, players, @participants, @squad_size)
   end
 
-  defp winner_message(human_squad, bot_squad) do
-    human_score = average_score(human_squad)
-    bot_score = average_score(bot_squad)
-
-    cond do
-      human_score > bot_score ->
-        "Draft complete. You win #{Float.round(human_score, 2)} to #{Float.round(bot_score, 2)}."
-
-      bot_score > human_score ->
-        "Draft complete. Bot wins #{Float.round(bot_score, 2)} to #{Float.round(human_score, 2)}."
-
-      true ->
-        "Draft complete. It is a draw at #{Float.round(human_score, 2)}."
+  defp apply_legal_pick(state, participant_id, player_id) do
+    with :ok <- Normal.validate_pick(state, participant_id, player_id) do
+      {:ok, Normal.apply_pick(state, participant_id, player_id)}
     end
   end
 
-  defp average_score(players) do
-    total = Enum.reduce(players, 0.0, fn player, acc -> acc + player.bot_value end)
-    total / max(length(players), 1)
+  defp legal_player_ids(state, participant_id) do
+    state.pool
+    |> Enum.filter(fn player_id ->
+      Normal.validate_pick(state, participant_id, player_id) == :ok
+    end)
   end
 
-  defp take_player(pool, player_id) do
-    case Enum.split_with(pool, fn player -> player.id != player_id end) do
-      {remaining, [picked_player]} -> {:ok, picked_player, remaining}
-      _ -> :error
+  defp finalize_outcome(socket, state) do
+    outcome = Normal.outcome(state)
+    human_score = score_for(outcome.scores, :human)
+    bot_score = score_for(outcome.scores, :bot)
+
+    message =
+      case outcome.winner do
+        :human -> "Draft complete. You win #{human_score} to #{bot_score}."
+        :bot -> "Draft complete. Bot wins #{bot_score} to #{human_score}."
+        nil -> "Draft complete. It is a draw at #{human_score}."
+      end
+
+    socket
+    |> assign(:outcome, outcome)
+    |> assign(:status_message, message)
+  end
+
+  defp parse_difficulty("easy"), do: :easy
+  defp parse_difficulty("hard"), do: :hard
+  defp parse_difficulty(_), do: :medium
+
+  defp parse_delay_override(nil), do: nil
+
+  defp parse_delay_override(delay_ms) do
+    case Integer.parse(delay_ms) do
+      {value, ""} when value >= 0 -> value
+      _ -> nil
     end
+  end
+
+  defp bot_delay_ms(socket) do
+    socket.assigns.delay_override_ms || Enum.random(@bot_delay_min_ms..@bot_delay_max_ms)
+  end
+
+  defp pick_error_message(:not_your_turn), do: "It is not your turn."
+  defp pick_error_message(:player_not_available), do: "That player is no longer available."
+
+  defp pick_error_message(:club_already_drafted),
+    do: "You already drafted a player from that club."
+
+  defp pick_error_message(:draft_complete), do: "Draft is already complete."
+
+  defp squad_size(state, participant_id) do
+    state.participants
+    |> Map.fetch!(participant_id)
+    |> Map.fetch!(:squad)
+    |> length()
+  end
+
+  defp squad_players(state, participant_id) do
+    state.participants
+    |> Map.fetch!(participant_id)
+    |> Map.fetch!(:squad)
+    |> Enum.map(fn player_id ->
+      state.players
+      |> Map.fetch!(player_id)
+      |> Normal.visible_fields()
+    end)
+  end
+
+  defp pool_players(state) do
+    state.pool
+    |> Enum.map(fn player_id ->
+      state.players |> Map.fetch!(player_id) |> Normal.visible_fields()
+    end)
+    |> Enum.sort_by(& &1.name)
+  end
+
+  defp winner_label(:human), do: "You"
+  defp winner_label(:bot), do: "Bot"
+  defp winner_label(nil), do: "Draw"
+
+  defp score_for(scores, participant_id) do
+    scores
+    |> Map.fetch!(participant_id)
+    |> Float.round(2)
   end
 
   defp load_player_pool do
     Football.list_players(:worldwide)
-    |> normalize_pool()
+    |> normalize_db_players()
     |> case do
-      [] -> fake_pool()
+      [] -> fake_players()
       players -> players
     end
-    |> Enum.take(16)
-    |> Enum.sort_by(& &1.name)
+    |> Enum.take(20)
+    |> Map.new(fn player -> {player.id, player} end)
   end
 
-  defp normalize_pool(players) do
+  defp normalize_db_players(players) do
+    current_season = Integer.to_string(Date.utc_today().year)
+
     Enum.map(players, fn player ->
-      value = 65 + rem(player.id * 11, 32)
+      rating =
+        case Football.hidden_rating_for(player.id, current_season) do
+          %Decimal{} = value -> Decimal.to_float(value)
+          _ -> fallback_rating(player.id)
+        end
 
       %{
         id: player.id,
         name: player.name,
         position: player.position || "Unknown",
+        club_id: player.club_id,
         club_name: (player.club && player.club.name) || "Unknown Club",
         nationality: player.nationality || "Unknown",
-        bot_value: value / 1.0
+        competition_id: competition_id_for(player),
+        rating: rating
       }
     end)
   end
 
-  defp fake_pool do
+  defp competition_id_for(player) do
+    cond do
+      player.competition && player.competition.id -> player.competition.id
+      player.club && player.club.competition_id -> player.club.competition_id
+      true -> nil
+    end
+  end
+
+  defp fallback_rating(player_id), do: 65 + rem(player_id * 11, 32)
+
+  defp fake_players do
     [
       %{
         id: 101,
         name: "Mateo Ruiz",
         position: "Goalkeeper",
+        club_id: 201,
         club_name: "Valencia Blue",
         nationality: "Spain",
-        bot_value: 88.0
+        competition_id: 1,
+        rating: 88.0
       },
       %{
         id: 102,
         name: "Joao Mota",
         position: "Left Back",
+        club_id: 202,
         club_name: "Lisbon Harbor",
         nationality: "Portugal",
-        bot_value: 79.0
+        competition_id: 1,
+        rating: 79.0
       },
       %{
         id: 103,
         name: "Luka Senic",
         position: "Center Back",
+        club_id: 203,
         club_name: "Danube Athletic",
         nationality: "Croatia",
-        bot_value: 85.0
+        competition_id: 1,
+        rating: 85.0
       },
       %{
         id: 104,
         name: "Arthur Klein",
         position: "Center Back",
-        club_name: "Rhine SC",
+        club_id: 203,
+        club_name: "Danube Athletic",
         nationality: "Germany",
-        bot_value: 83.0
+        competition_id: 1,
+        rating: 83.0
       },
       %{
         id: 105,
         name: "Pietro Nardi",
         position: "Right Back",
+        club_id: 205,
         club_name: "Torino Nord",
         nationality: "Italy",
-        bot_value: 81.0
+        competition_id: 1,
+        rating: 81.0
       },
       %{
         id: 106,
         name: "Noah Berg",
         position: "Defensive Midfielder",
+        club_id: 206,
         club_name: "Stockholm IF",
         nationality: "Sweden",
-        bot_value: 87.0
+        competition_id: 1,
+        rating: 87.0
       },
       %{
         id: 107,
         name: "Ibrahim Yildiz",
         position: "Central Midfielder",
+        club_id: 207,
         club_name: "Ankara Sun",
         nationality: "Turkey",
-        bot_value: 90.0
+        competition_id: 1,
+        rating: 90.0
       },
       %{
         id: 108,
         name: "Niko Petrov",
         position: "Central Midfielder",
+        club_id: 208,
         club_name: "Belgrade United",
         nationality: "Serbia",
-        bot_value: 84.0
+        competition_id: 1,
+        rating: 84.0
       },
       %{
         id: 109,
         name: "Leo Martin",
         position: "Attacking Midfielder",
+        club_id: 209,
         club_name: "Lyon Horizons",
         nationality: "France",
-        bot_value: 91.0
+        competition_id: 1,
+        rating: 91.0
       },
       %{
         id: 110,
         name: "Rafael Duarte",
         position: "Left Wing",
+        club_id: 210,
         club_name: "Porto Waves",
         nationality: "Portugal",
-        bot_value: 86.0
+        competition_id: 1,
+        rating: 86.0
       },
       %{
         id: 111,
         name: "Jonas Silva",
         position: "Right Wing",
+        club_id: 211,
         club_name: "Santos Vista",
         nationality: "Brazil",
-        bot_value: 92.0
+        competition_id: 1,
+        rating: 92.0
       },
       %{
         id: 112,
         name: "Tariq Mansour",
         position: "Striker",
+        club_id: 212,
         club_name: "Casablanca Stars",
         nationality: "Morocco",
-        bot_value: 89.0
+        competition_id: 1,
+        rating: 89.0
       },
       %{
         id: 113,
         name: "Ethan Cole",
         position: "Striker",
+        club_id: 213,
         club_name: "Bristol Albion",
         nationality: "England",
-        bot_value: 80.0
+        competition_id: 1,
+        rating: 80.0
       },
       %{
         id: 114,
         name: "Mika Ojala",
         position: "Right Wing",
+        club_id: 214,
         club_name: "Helsinki Forge",
         nationality: "Finland",
-        bot_value: 78.0
+        competition_id: 1,
+        rating: 78.0
       },
       %{
         id: 115,
         name: "Dusan Markic",
         position: "Left Wing",
-        club_name: "Prague Crown",
+        club_id: 210,
+        club_name: "Porto Waves",
         nationality: "Czechia",
-        bot_value: 82.0
+        competition_id: 1,
+        rating: 82.0
       },
       %{
         id: 116,
         name: "Bruno Costa",
         position: "Attacking Midfielder",
+        club_id: 216,
         club_name: "Madeira City",
         nationality: "Portugal",
-        bot_value: 77.0
+        competition_id: 1,
+        rating: 77.0
       }
     ]
   end
