@@ -22,7 +22,7 @@ defmodule FootDrafts.Football.Club do
   def changeset(club, attrs) do
     club
     |> cast(attrs, [:name, :country, :external_id])
-    |> validate_required([:name, :external_id])
+    |> validate_required([:name, :external_id, :competition_id])
     |> foreign_key_constraint(:competition_id)
     |> unique_constraint(:external_id)
   end
