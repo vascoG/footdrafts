@@ -19,8 +19,8 @@ defmodule FootDrafts.Football.PlayerRating do
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
   def changeset(player_rating, attrs) do
     player_rating
-    |> cast(attrs, [:player_id, :season, :rating])
-    |> validate_required([:player_id, :season, :rating])
+    |> cast(attrs, [:season, :rating])
+    |> validate_required([:season, :rating])
     |> foreign_key_constraint(:player_id)
     |> unique_constraint([:player_id, :season])
   end
