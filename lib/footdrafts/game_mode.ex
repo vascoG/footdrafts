@@ -57,6 +57,6 @@ defmodule FootDrafts.GameMode do
             ) ::
               State.t()
 
-  @doc "Computes the match outcome once `state.status == :complete`."
-  @callback outcome(state :: State.t()) :: %{winner: State.participant_id(), scores: map()}
+  @doc "Computes the match outcome once `state.status == :complete`. `winner` is `nil` when the top score is shared by more than one participant."
+  @callback outcome(state :: State.t()) :: %{winner: State.participant_id() | nil, scores: map()}
 end

@@ -147,5 +147,32 @@ defmodule FootDrafts.GameModes.NormalTest do
 
       assert Normal.outcome(state) == %{winner: :bob, scores: %{alice: 80.0, bob: 90.0}}
     end
+
+    test "returns nil winner when squads have equal average ratings" do
+      tied_players = %{
+        1 => %{
+          id: 1,
+          name: "Player A",
+          club_id: 100,
+          club_name: "Club A",
+          competition_id: 10,
+          rating: 80
+        },
+        2 => %{
+          id: 2,
+          name: "Player B",
+          club_id: 101,
+          club_name: "Club B",
+          competition_id: 10,
+          rating: 80
+        }
+      }
+
+      state = State.new(Normal, :worldwide, tied_players, [:alice, :bob], 1)
+      state = Normal.apply_pick(state, :alice, 1)
+      state = Normal.apply_pick(state, :bob, 2)
+
+      assert Normal.outcome(state) == %{winner: nil, scores: %{alice: 80.0, bob: 80.0}}
+    end
   end
 end

@@ -68,7 +68,10 @@ defmodule FootDrafts.GameModes.Normal do
         {participant_id, squad_rating(squad, players)}
       end)
 
-    {winner, _score} = Enum.max_by(scores, fn {_participant_id, score} -> score end)
+    max_score = scores |> Map.values() |> Enum.max()
+    winners = for {id, score} <- scores, score == max_score, do: id
+
+    winner = if length(winners) == 1, do: hd(winners), else: nil
 
     %{winner: winner, scores: scores}
   end
