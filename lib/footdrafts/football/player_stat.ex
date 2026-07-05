@@ -22,8 +22,8 @@ defmodule FootDrafts.Football.PlayerStat do
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
   def changeset(player_stat, attrs) do
     player_stat
-    |> cast(attrs, [:player_id, :season, :goals, :assists, :appearances, :minutes_played])
-    |> validate_required([:player_id, :season])
+    |> cast(attrs, [:season, :goals, :assists, :appearances, :minutes_played])
+    |> validate_required([:season])
     |> foreign_key_constraint(:player_id)
     |> unique_constraint([:player_id, :season])
   end
