@@ -41,7 +41,7 @@ defmodule FootDrafts.Football.Import do
   def import_competition!(competition_code) do
     payload = fetch_competition_payload!(competition_code)
 
-    {:ok, {competition, clubs, players}} =
+    {competition, clubs, players} =
       FootDrafts.Repo.transaction(fn ->
         competition = Football.upsert_competition!(payload.competition)
 
@@ -65,6 +65,10 @@ defmodule FootDrafts.Football.Import do
 
         {competition, club_count, player_count}
       end)
+      |> case do
+        {:ok, result} -> result
+        {:error, reason} -> raise "import_competition!/1 failed: #{inspect(reason)}"
+      end
 
     %{competition: competition, clubs: clubs, players: players}
   end
