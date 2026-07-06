@@ -39,28 +39,32 @@ defmodule FootDraftsWeb.BotDraftLive do
         {:noreply, socket}
 
       true ->
-        player_id = String.to_integer(id)
+        case Integer.parse(id) do
+          {player_id, ""} ->
+            case apply_legal_pick(socket.assigns.state, :human, player_id) do
+              {:ok, state_after_human} ->
+                if state_after_human.status == :complete do
+                  {:noreply,
+                   socket
+                   |> assign(:state, state_after_human)
+                   |> finalize_outcome(state_after_human)}
+                else
+                  delay_ms = bot_delay_ms(socket)
+                  Process.send_after(self(), :bot_turn, delay_ms)
 
-        case apply_legal_pick(socket.assigns.state, :human, player_id) do
-          {:ok, state_after_human} ->
-            if state_after_human.status == :complete do
-              {:noreply,
-               socket
-               |> assign(:state, state_after_human)
-               |> finalize_outcome(state_after_human)}
-            else
-              delay_ms = bot_delay_ms(socket)
-              Process.send_after(self(), :bot_turn, delay_ms)
+                  {:noreply,
+                   socket
+                   |> assign(:state, state_after_human)
+                   |> assign(:bot_thinking?, true)
+                   |> assign(:status_message, "Bot is thinking...")}
+                end
 
-              {:noreply,
-               socket
-               |> assign(:state, state_after_human)
-               |> assign(:bot_thinking?, true)
-               |> assign(:status_message, "Bot is thinking...")}
+              {:error, reason} ->
+                {:noreply, put_flash(socket, :error, pick_error_message(reason))}
             end
 
-          {:error, reason} ->
-            {:noreply, put_flash(socket, :error, pick_error_message(reason))}
+          _ ->
+            {:noreply, put_flash(socket, :error, "Invalid player id.")}
         end
     end
   end
