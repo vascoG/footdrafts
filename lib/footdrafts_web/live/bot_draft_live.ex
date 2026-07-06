@@ -6,25 +6,32 @@ defmodule FootDraftsWeb.BotDraftLive do
 
   @squad_size 5
   @participants [:human, :bot]
-  @bot_delay_min_ms 1_000
-  @bot_delay_max_ms 3_000
+  @bot_delay_min_ms 500
+  @bot_delay_max_ms 2_000
 
   @type difficulty :: :easy | :medium | :hard
 
   @impl true
   def mount(params, _session, socket) do
     difficulty = parse_difficulty(Map.get(params, "difficulty"))
-    state = new_draft_state()
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Bot Draft")
-     |> assign(:squad_size, @squad_size)
-     |> assign(:difficulty, difficulty)
-     |> assign(:state, state)
-     |> assign(:bot_thinking?, false)
-     |> assign(:outcome, nil)
-     |> assign(:status_message, "Your turn. Pick your first player.")}
+    socket =
+      socket
+      |> assign(:page_title, "Bot Draft")
+      |> assign(:squad_size, @squad_size)
+      |> assign(:difficulty, difficulty)
+       |> assign(:bot_thinking?, false)
+      |> assign(:outcome, nil)
+      |> assign(:status_message, "Your turn. Pick your first player.")
+
+    socket =
+      if connected?(socket) do
+        assign(socket, :state, new_draft_state())
+      else
+        assign(socket, :state, empty_draft_state())
+      end
+
+    {:ok, socket}
   end
 
   @impl true
@@ -274,6 +281,10 @@ defmodule FootDraftsWeb.BotDraftLive do
     State.new(Normal, :worldwide, players, @participants, @squad_size)
   end
 
+  defp empty_draft_state do
+    State.new(Normal, :worldwide, %{}, @participants, @squad_size)
+  end
+
   defp apply_legal_pick(state, participant_id, player_id) do
     with :ok <- Normal.validate_pick(state, participant_id, player_id) do
       {:ok, Normal.apply_pick(state, participant_id, player_id)}
@@ -373,7 +384,7 @@ defmodule FootDraftsWeb.BotDraftLive do
     |> Enum.filter(fn {_club_id, club_players} -> length(club_players) >= players_per_club end)
     |> Enum.flat_map(fn {_club_id, club_players} ->
       club_players
-      |> Enum.sort_by(& &1.name)
+      |> Enum.shuffle()
       |> Enum.take(players_per_club)
     end)
   end
