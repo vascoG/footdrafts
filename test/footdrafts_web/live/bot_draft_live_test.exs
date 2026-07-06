@@ -12,7 +12,7 @@ defmodule FootDraftsWeb.BotDraftLiveTest do
   end
 
   test "human pick schedules delayed bot pick", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/play/bot?bot_delay_ms=5000")
+    {:ok, view, _html} = live(conn, ~p"/play/bot")
 
     view
     |> element("#pick-player-101")
@@ -28,7 +28,7 @@ defmodule FootDraftsWeb.BotDraftLiveTest do
   end
 
   test "hard difficulty takes the top legal pick", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/play/bot?difficulty=hard&bot_delay_ms=5000")
+    {:ok, view, _html} = live(conn, ~p"/play/bot?difficulty=hard")
 
     view
     |> element("#pick-player-101")
@@ -40,7 +40,7 @@ defmodule FootDraftsWeb.BotDraftLiveTest do
   end
 
   test "difficulty change resets the draft", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/play/bot?bot_delay_ms=5000")
+    {:ok, view, _html} = live(conn, ~p"/play/bot")
 
     view
     |> element("#pick-player-101")

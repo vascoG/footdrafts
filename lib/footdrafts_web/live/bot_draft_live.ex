@@ -14,7 +14,6 @@ defmodule FootDraftsWeb.BotDraftLive do
   @impl true
   def mount(params, _session, socket) do
     difficulty = parse_difficulty(Map.get(params, "difficulty"))
-    delay_override_ms = parse_delay_override(Map.get(params, "bot_delay_ms"))
     state = new_draft_state()
 
     {:ok,
@@ -22,7 +21,6 @@ defmodule FootDraftsWeb.BotDraftLive do
      |> assign(:page_title, "Bot Draft")
      |> assign(:squad_size, @squad_size)
      |> assign(:difficulty, difficulty)
-     |> assign(:delay_override_ms, delay_override_ms)
      |> assign(:state, state)
      |> assign(:bot_thinking?, false)
      |> assign(:outcome, nil)
@@ -49,7 +47,7 @@ defmodule FootDraftsWeb.BotDraftLive do
                    |> assign(:state, state_after_human)
                    |> finalize_outcome(state_after_human)}
                 else
-                  delay_ms = bot_delay_ms(socket)
+                  delay_ms = bot_delay_ms()
                   Process.send_after(self(), :bot_turn, delay_ms)
 
                   {:noreply,
@@ -310,17 +308,8 @@ defmodule FootDraftsWeb.BotDraftLive do
   defp parse_difficulty("hard"), do: :hard
   defp parse_difficulty(_), do: :medium
 
-  defp parse_delay_override(nil), do: nil
-
-  defp parse_delay_override(delay_ms) do
-    case Integer.parse(delay_ms) do
-      {value, ""} when value >= 0 -> value
-      _ -> nil
-    end
-  end
-
-  defp bot_delay_ms(socket) do
-    socket.assigns.delay_override_ms || Enum.random(@bot_delay_min_ms..@bot_delay_max_ms)
+  defp bot_delay_ms do
+    Enum.random(@bot_delay_min_ms..@bot_delay_max_ms)
   end
 
   defp pick_error_message(:not_your_turn), do: "It is not your turn."
