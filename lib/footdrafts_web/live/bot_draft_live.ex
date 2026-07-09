@@ -451,20 +451,30 @@ defmodule FootDraftsWeb.BotDraftLive do
 
   # Pulls a fixed number of players per position (4 for Goalkeeper/Defender/
   # Forward, 8 for Midfielder) at random from the full normalized player list.
-  # This intentionally ignores club as a pool-building constraint — the
-  # per-participant "no two players from the same club" rule is still enforced
-  # at pick time by Normal.validate_pick/3, so club diversity there is
-  # self-correcting as long as there's enough underlying supply, which is why
-  # we keep adding more clubs/players to the source data.
+  # We explicitly enforce club diversity within the sampled pool
+  # to prevent participants from getting deadlocked with no available picks.
   defp sample_players_by_position(players) do
-    by_position = Enum.group_by(players, & &1.position)
+    shuffled_players = Enum.shuffle(players)
+    by_position = Enum.group_by(shuffled_players, & &1.position)
 
     Enum.flat_map(@position_pool_sizes, fn {position, count} ->
       by_position
       |> Map.get(position, [])
-      |> Enum.shuffle()
+      # Take players with unique clubs first to maximize diversity
+      |> Enum.uniq_by(& &1.club_id)
       |> Enum.take(count)
+      # Fallback: If a position doesn't have enough unique clubs to meet the count,
+      # we pad it back out with the remaining shuffled players of that position.
+      |> pad_pool_if_needed(Map.get(by_position, position, []), count)
     end)
+  end
+
+  # Helper to ensure we always return the exact count required,
+  # even if it means duplicating clubs when unique ones run out.
+  defp pad_pool_if_needed(sampled, _all_position_players, count) when length(sampled) >= count, do: sampled
+  defp pad_pool_if_needed(sampled, all_position_players, count) do
+    remaining = all_position_players -- sampled
+    sampled ++ Enum.take(remaining, count - length(sampled))
   end
 
   defp normalize_db_players(players) do
