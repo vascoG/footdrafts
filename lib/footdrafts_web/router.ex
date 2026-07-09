@@ -18,6 +18,7 @@ defmodule FootDraftsWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    live "/play/bot", BotDraftLive
   end
 
   # Other scopes may use custom stacks.

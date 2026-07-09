@@ -79,4 +79,15 @@ defmodule FootDrafts.Football do
       returning: true
     )
   end
+
+  @spec upsert_player_rating!(map()) :: PlayerRating.t()
+  def upsert_player_rating!(attrs) do
+    %PlayerRating{player_id: Map.fetch!(attrs, :player_id)}
+    |> PlayerRating.changeset(Map.delete(attrs, :player_id))
+    |> Repo.insert!(
+      conflict_target: [:player_id, :season],
+      on_conflict: {:replace, [:rating, :updated_at]},
+      returning: true
+    )
+  end
 end
