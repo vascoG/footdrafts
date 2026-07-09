@@ -18,6 +18,13 @@ defmodule FootDrafts.GameModes.Normal do
 
   alias FootDrafts.Draft.State
 
+  @position_requirements %{
+    "Goalkeeper" => 1,
+    "Defender" => 1,
+    "Midfielder" => 2,
+    "Forward" => 1
+  }
+
   @impl true
   def pool(:worldwide, players), do: Map.keys(players)
 
@@ -32,6 +39,13 @@ defmodule FootDrafts.GameModes.Normal do
     Map.take(player, [:id, :name, :position, :club_id, :club_name, :nationality, :competition_id])
   end
 
+  @doc """
+  Required count of each position per squad. Exposed publicly because both
+  pick validation here and the initial pool-generation code (BotDraftLive)
+  need to agree on it.
+  """
+  def position_requirements, do: @position_requirements
+
   @impl true
   def validate_pick(%State{status: :complete}, _participant_id, _player_id) do
     {:error, :draft_complete}
@@ -40,7 +54,8 @@ defmodule FootDrafts.GameModes.Normal do
   def validate_pick(%State{} = state, participant_id, player_id) do
     with :ok <- check_turn(state, participant_id),
          :ok <- check_available(state, player_id),
-         :ok <- check_club_not_taken(state, participant_id, player_id) do
+         :ok <- check_club_not_taken(state, participant_id, player_id),
+         :ok <- check_position_slot_available(state, participant_id, player_id) do
       :ok
     end
   end
@@ -107,6 +122,34 @@ defmodule FootDrafts.GameModes.Normal do
       {:error, :club_already_drafted}
     else
       :ok
+    end
+  end
+
+  defp check_position_slot_available(
+         %State{participants: participants, players: players},
+         participant_id,
+         player_id
+       ) do
+    %{position: incoming_position} = Map.fetch!(players, player_id)
+
+    case Map.fetch(@position_requirements, incoming_position) do
+      {:ok, allowed} ->
+        taken =
+          participants
+          |> Map.fetch!(participant_id)
+          |> Map.fetch!(:squad)
+          |> Enum.count(fn id ->
+            players |> Map.fetch!(id) |> Map.fetch!(:position) == incoming_position
+          end)
+
+        if taken < allowed do
+          :ok
+        else
+          {:error, :position_full}
+        end
+
+      :error ->
+        {:error, :unknown_position}
     end
   end
 
