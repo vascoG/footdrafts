@@ -6,8 +6,15 @@ defmodule FootDraftsWeb.BotDraftLive do
 
   @squad_size 5
   @participants [:human, :bot]
-  @bot_delay_min_ms 500
-  @bot_delay_max_ms 2_000
+  @bot_delay_min_ms 1_000
+  @bot_delay_max_ms 3_000
+  @position_order ["Goalkeeper", "Defender", "Midfielder", "Forward"]
+  @position_pool_sizes %{
+    "Goalkeeper" => 4,
+    "Defender" => 4,
+    "Midfielder" => 8,
+    "Forward" => 4
+  }
 
   @type difficulty :: :easy | :medium | :hard
 
@@ -20,7 +27,7 @@ defmodule FootDraftsWeb.BotDraftLive do
       |> assign(:page_title, "Bot Draft")
       |> assign(:squad_size, @squad_size)
       |> assign(:difficulty, difficulty)
-       |> assign(:bot_thinking?, false)
+      |> assign(:bot_thinking?, false)
       |> assign(:outcome, nil)
       |> assign(:status_message, "Your turn. Pick your first player.")
 
@@ -177,11 +184,17 @@ defmodule FootDraftsWeb.BotDraftLive do
               {squad_size(@state, :human)} / {@squad_size}
             </p>
 
-            <ul class="mt-3 space-y-1 text-sm text-[#243c2d]" id="human-squad-list">
-              <li :for={player <- squad_players(@state, :human)}>
-                {player.name} - {player.position}
-              </li>
-            </ul>
+            <div class="mt-3 space-y-2" id="human-squad-list">
+              <div :for={{position, players} <- squad_by_position(@state, :human)}>
+                <p class="text-xs font-semibold uppercase tracking-[0.1em] text-[#294132]/60">
+                  {position} ({length(players)}/{position_slot_count(position)})
+                </p>
+
+                <ul class="ml-2 text-sm text-[#243c2d]">
+                  <li :for={player <- players}>{player.name}</li>
+                </ul>
+              </div>
+            </div>
           </article>
 
           <article class="rounded-xl bg-[#fff4e5] p-4" id="bot-panel">
@@ -191,9 +204,17 @@ defmodule FootDraftsWeb.BotDraftLive do
               {squad_size(@state, :bot)} / {@squad_size}
             </p>
 
-            <ul class="mt-3 space-y-1 text-sm text-[#704318]" id="bot-squad-list">
-              <li :for={player <- squad_players(@state, :bot)}>{player.name} - {player.position}</li>
-            </ul>
+            <div class="mt-3 space-y-2" id="bot-squad-list">
+              <div :for={{position, players} <- squad_by_position(@state, :bot)}>
+                <p class="text-xs font-semibold uppercase tracking-[0.1em] text-[#7a4710]/60">
+                  {position} ({length(players)}/{position_slot_count(position)})
+                </p>
+
+                <ul class="ml-2 text-sm text-[#704318]">
+                  <li :for={player <- players}>{player.name}</li>
+                </ul>
+              </div>
+            </div>
           </article>
 
           <article class="rounded-xl border border-dashed border-[#1f2f26]/20 p-4" id="status-panel">
@@ -232,33 +253,42 @@ defmodule FootDraftsWeb.BotDraftLive do
             <span class="text-xs uppercase tracking-[0.16em] text-[#294132]/80">Fake data ready</span>
           </div>
 
-          <ul class="grid gap-3" id="available-player-list">
-            <li
-              :for={player <- pool_players(@state)}
-              class="flex flex-col gap-3 rounded-2xl border border-[#1f2f26]/10 bg-[#fdfefb] p-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div>
-                <p class="font-semibold text-[#122117]">{player.name}</p>
+          <div :for={{position, players} <- pool_players_by_position(@state)} class="mb-4">
+            <h3 class="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#294132]/70">
+              {position}
+            </h3>
 
-                <p class="text-sm text-[#294132]/80">
-                  {player.position} - {player.club_name} - {player.nationality}
-                </p>
-              </div>
-
-              <button
-                id={"pick-player-#{player.id}"}
-                data-player-id={player.id}
-                phx-click="pick"
-                phx-value-id={player.id}
-                disabled={
-                  @bot_thinking? or @state.status == :complete or State.current_turn(@state) != :human
-                }
-                class="inline-flex items-center justify-center rounded-xl bg-[#1f2f26] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#132019] disabled:cursor-not-allowed disabled:bg-[#6e7d73]"
+            <ul class="grid gap-3" id={"available-player-list-#{position}"}>
+              <li
+                :for={player <- players}
+                class="flex flex-col gap-3 rounded-2xl border border-[#1f2f26]/10 bg-[#fdfefb] p-4 sm:flex-row sm:items-center sm:justify-between"
               >
-                Pick
-              </button>
-            </li>
-          </ul>
+                <div>
+                  <p class="font-semibold text-[#122117]">{player.name}</p>
+
+                  <p class="text-sm text-[#294132]/80">
+                    {player.position} - {player.club_name} - {player.nationality}
+                  </p>
+                </div>
+
+                <button
+                  id={"pick-player-#{player.id}"}
+                  data-player-id={player.id}
+                  phx-click="pick"
+                  phx-value-id={player.id}
+                  disabled={
+                    @bot_thinking? or @state.status == :complete or
+                      State.current_turn(@state) != :human or
+                      position_full?(@state, :human, player.position) or
+                      club_already_picked?(@state, :human, player.club_name)
+                  }
+                  class="inline-flex items-center justify-center rounded-xl bg-[#1f2f26] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#132019] disabled:cursor-not-allowed disabled:bg-[#6e7d73]"
+                >
+                  Pick
+                </button>
+              </li>
+            </ul>
+          </div>
         </section>
       </section>
     </Layouts.app>
@@ -325,10 +355,9 @@ defmodule FootDraftsWeb.BotDraftLive do
 
   defp pick_error_message(:not_your_turn), do: "It is not your turn."
   defp pick_error_message(:player_not_available), do: "That player is no longer available."
-
-  defp pick_error_message(:club_already_drafted),
-    do: "You already drafted a player from that club."
-
+  defp pick_error_message(:club_already_drafted), do: "You already drafted a player from that club."
+  defp pick_error_message(:position_full), do: "You already filled that position."
+  defp pick_error_message(:unknown_position), do: "That player has an unrecognized position."
   defp pick_error_message(:draft_complete), do: "Draft is already complete."
 
   defp squad_size(state, participant_id) do
@@ -357,6 +386,49 @@ defmodule FootDraftsWeb.BotDraftLive do
     |> Enum.sort_by(& &1.name)
   end
 
+  @position_order ["Goalkeeper", "Defender", "Midfielder", "Forward"]
+
+  defp position_slot_count(position), do: Map.fetch!(Normal.position_requirements(), position)
+
+  defp squad_by_position(state, participant_id) do
+    players = squad_players(state, participant_id)
+
+    Enum.map(@position_order, fn position ->
+      {position, Enum.filter(players, &(&1.position == position))}
+    end)
+  end
+
+  defp pool_players_by_position(state) do
+    players = pool_players(state)
+
+    @position_order
+    |> Enum.map(fn position -> {position, Enum.filter(players, &(&1.position == position))} end)
+    |> Enum.reject(fn {_position, players} -> players == [] end)
+  end
+
+  defp position_full?(state, participant_id, position) do
+    requirement = position_slot_count(position)
+
+    taken =
+      state.participants
+      |> Map.fetch!(participant_id)
+      |> Map.fetch!(:squad)
+      |> Enum.count(fn player_id ->
+        state.players |> Map.fetch!(player_id) |> Map.fetch!(:position) == position
+      end)
+
+    taken >= requirement
+  end
+
+  defp club_already_picked?(state, participant_id, club_name) do
+    state.participants
+    |> Map.fetch!(participant_id)
+    |> Map.fetch!(:squad)
+    |> Enum.any?(fn player_id ->
+      state.players |> Map.fetch!(player_id) |> Map.fetch!(:club_name) == club_name
+    end)
+  end
+
   defp winner_label(:human), do: "You"
   defp winner_label(:bot), do: "Bot"
   defp winner_label(nil), do: "Draw"
@@ -371,22 +443,38 @@ defmodule FootDraftsWeb.BotDraftLive do
     Football.list_players(:worldwide)
     |> normalize_db_players()
     |> case do
-      [] -> fake_players()
       players -> players
     end
-    |> balanced_players_by_club(2)
+    |> sample_players_by_position()
     |> Map.new(fn player -> {player.id, player} end)
   end
 
-  defp balanced_players_by_club(players, players_per_club) do
-    players
-    |> Enum.group_by(& &1.club_id)
-    |> Enum.filter(fn {_club_id, club_players} -> length(club_players) >= players_per_club end)
-    |> Enum.flat_map(fn {_club_id, club_players} ->
-      club_players
-      |> Enum.shuffle()
-      |> Enum.take(players_per_club)
+  # Pulls a fixed number of players per position (4 for Goalkeeper/Defender/
+  # Forward, 8 for Midfielder) at random from the full normalized player list.
+  # We explicitly enforce club diversity within the sampled pool
+  # to prevent participants from getting deadlocked with no available picks.
+  defp sample_players_by_position(players) do
+    shuffled_players = Enum.shuffle(players)
+    by_position = Enum.group_by(shuffled_players, & &1.position)
+
+    Enum.flat_map(@position_pool_sizes, fn {position, count} ->
+      by_position
+      |> Map.get(position, [])
+      # Take players with unique clubs first to maximize diversity
+      |> Enum.uniq_by(& &1.club_id)
+      |> Enum.take(count)
+      # Fallback: If a position doesn't have enough unique clubs to meet the count,
+      # we pad it back out with the remaining shuffled players of that position.
+      |> pad_pool_if_needed(Map.get(by_position, position, []), count)
     end)
+  end
+
+  # Helper to ensure we always return the exact count required,
+  # even if it means duplicating clubs when unique ones run out.
+  defp pad_pool_if_needed(sampled, _all_position_players, count) when length(sampled) >= count, do: sampled
+  defp pad_pool_if_needed(sampled, all_position_players, count) do
+    remaining = all_position_players -- sampled
+    sampled ++ Enum.take(remaining, count - length(sampled))
   end
 
   defp normalize_db_players(players) do
@@ -396,7 +484,6 @@ defmodule FootDraftsWeb.BotDraftLive do
       rating =
         case Football.hidden_rating_for(player.id, current_season) do
           %Decimal{} = value -> Decimal.to_float(value)
-          _ -> fallback_rating(player.id)
         end
 
       %{
@@ -420,110 +507,4 @@ defmodule FootDraftsWeb.BotDraftLive do
     end
   end
 
-  defp fallback_rating(player_id), do: 65 + rem(player_id * 11, 32)
-
-  defp fake_players do
-    [
-      %{
-        id: 101,
-        name: "Mateo Ruiz",
-        position: "Goalkeeper",
-        club_id: 201,
-        club_name: "Valencia Blue",
-        nationality: "Spain",
-        competition_id: 1,
-        rating: 88.0
-      },
-      %{
-        id: 117,
-        name: "Ivan Kolar",
-        position: "Defender",
-        club_id: 201,
-        club_name: "Valencia Blue",
-        nationality: "Croatia",
-        competition_id: 1,
-        rating: 82.0
-      },
-      %{
-        id: 102,
-        name: "Joao Mota",
-        position: "Left Back",
-        club_id: 202,
-        club_name: "Lisbon Harbor",
-        nationality: "Portugal",
-        competition_id: 1,
-        rating: 79.0
-      },
-      %{
-        id: 110,
-        name: "Rafael Duarte",
-        position: "Left Wing",
-        club_id: 202,
-        club_name: "Lisbon Harbor",
-        nationality: "Portugal",
-        competition_id: 1,
-        rating: 86.0
-      },
-      %{
-        id: 103,
-        name: "Luka Senic",
-        position: "Center Back",
-        club_id: 203,
-        club_name: "Danube Athletic",
-        nationality: "Croatia",
-        competition_id: 1,
-        rating: 85.0
-      },
-      %{
-        id: 104,
-        name: "Arthur Klein",
-        position: "Center Back",
-        club_id: 203,
-        club_name: "Danube Athletic",
-        nationality: "Germany",
-        competition_id: 1,
-        rating: 83.0
-      },
-      %{
-        id: 106,
-        name: "Noah Berg",
-        position: "Defensive Midfielder",
-        club_id: 204,
-        club_name: "Stockholm IF",
-        nationality: "Sweden",
-        competition_id: 1,
-        rating: 87.0
-      },
-      %{
-        id: 107,
-        name: "Ibrahim Yildiz",
-        position: "Central Midfielder",
-        club_id: 204,
-        club_name: "Stockholm IF",
-        nationality: "Turkey",
-        competition_id: 1,
-        rating: 90.0
-      },
-      %{
-        id: 111,
-        name: "Jonas Silva",
-        position: "Right Wing",
-        club_id: 205,
-        club_name: "Santos Vista",
-        nationality: "Brazil",
-        competition_id: 1,
-        rating: 92.0
-      },
-      %{
-        id: 112,
-        name: "Tariq Mansour",
-        position: "Striker",
-        club_id: 205,
-        club_name: "Casablanca Stars",
-        nationality: "Morocco",
-        competition_id: 1,
-        rating: 89.0
-      }
-    ]
-  end
 end
